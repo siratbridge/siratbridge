@@ -55,3 +55,9 @@ forge test
 ## License
 
 MIT
+
+## Community
+
+- **Twitter:** [@sirat_bridge](https://x.com/sirat_bridge)
+- **Discord:** [Join](https://discord.gg/AKBJ3uctU)
+- **Website:** [siratbridge.github.io](https://siratbridge.github.io/siratbridge/)
