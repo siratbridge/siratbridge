@@ -61,3 +61,7 @@ MIT
 - **Twitter:** [@sirat_bridge](https://x.com/sirat_bridge)
 - **Discord:** [Join](https://discord.gg/AKBJ3uctU)
 - **Website:** [siratbridge.github.io](https://siratbridge.github.io/siratbridge/)
+
+## Medium
+
+- **Article:** [I Spent 3 Weeks Building a USDC Bridge](https://siratbridge.medium.com/i-spent-3-weeks-building-a-usdc-bridge-then-i-found-a-critical-bug-de3087a17b3d)
