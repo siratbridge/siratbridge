@@ -1,0 +1,173 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "./interfaces/IERC20.sol";
+
+/// @title GhostPool v4
+/// @notice Escrow for intent-based cross-chain USDC transfers
+/// @dev Permissionless fill. No Solver. No Registry. Simple. Safe.
+contract GhostPool {
+    IERC20 public immutable USDC;
+    address public immutable TREASURY;
+    address public EXECUTOR;  // must be contract, set once
+    
+    uint256 public constant FEE_DENOMINATOR = 100_000;
+    uint256 public constant TOTAL_FEE = 50;        // 0.050%
+    uint256 public constant TREASURY_FEE = 10;     // 0.010%
+    // relayerFee = 40 (0.040%) — implicit (inputAmount - outputAmount - 10)
+    uint256 public constant MAX_FILL_DEADLINE = 1 hours;
+    uint256 public constant MAX_ACTIVE_INTENTS = 10;
+    uint256 public constant MIN_INPUT_AMOUNT = 1e6;  // 1 USDC
+    
+    struct Intent {
+        address user;
+        uint256 inputAmount;
+        uint256 outputAmount;
+        uint256 destChainId;
+        uint32 fillDeadline;
+        bool filled;
+        bool refunded;
+    }
+    
+    mapping(bytes32 => Intent) public intents;
+    mapping(address => uint256) public nonces;
+    mapping(address => uint256) public activeIntents;
+    
+    event IntentSigned(
+        bytes32 indexed intentId,
+        address indexed user,
+        uint256 inputAmount,
+        uint256 outputAmount,
+        uint256 destChainId,
+        uint32 fillDeadline
+    );
+    event IntentFilled(bytes32 indexed intentId, address indexed relayer);
+    event IntentRefunded(bytes32 indexed intentId, address indexed user);
+    event ExecutorInitialized(address indexed executor);
+    
+    error ZeroAddress();
+    error ZeroAmount();
+    error DeadlinePast();
+    error DeadlineTooFar();
+    error AlreadyFilled();
+    error AlreadyRefunded();
+    error Unauthorized();
+    error TransferFailed();
+    error DeadlineExpired();
+    error NotExpired();
+    error IntentNotFound();
+    error AlreadyInitialized();
+    error InvalidOutputAmount();
+    error InvalidFee();
+    error InvalidSender();
+    error TooManyActiveIntents();
+    error InvalidRelayer();
+    error NotContract();
+    error BelowMinimum();
+    
+    constructor(address _usdc, address _treasury) {
+        if (_usdc == address(0) || _treasury == address(0)) revert ZeroAddress();
+        USDC = IERC20(_usdc);
+        TREASURY = _treasury;
+    }
+    
+    function initExecutor(address _executor) external {
+        if (EXECUTOR != address(0)) revert AlreadyInitialized();
+        if (_executor == address(0)) revert ZeroAddress();
+        if (_executor.code.length == 0) revert NotContract();
+        EXECUTOR = _executor;
+        emit ExecutorInitialized(_executor);
+    }
+    
+    function signIntent(
+        uint256 inputAmount,
+        uint256 outputAmount,
+        uint256 destChainId,
+        uint32 fillDeadline
+    ) external returns (bytes32) {
+        if (msg.sender == address(this)) revert InvalidSender();
+        if (msg.sender == EXECUTOR) revert InvalidSender();
+        
+        if (inputAmount == 0) revert ZeroAmount();
+        if (inputAmount < MIN_INPUT_AMOUNT) revert BelowMinimum();
+        if (inputAmount <= outputAmount) revert InvalidOutputAmount();
+        
+        uint256 feeAmount = inputAmount - outputAmount;
+        uint256 expectedFee = (inputAmount * TOTAL_FEE) / FEE_DENOMINATOR;
+        if (feeAmount != expectedFee) revert InvalidFee();
+        
+        if (fillDeadline <= block.timestamp) revert DeadlinePast();
+        if (fillDeadline > block.timestamp + MAX_FILL_DEADLINE) revert DeadlineTooFar();
+        
+        if (activeIntents[msg.sender] >= MAX_ACTIVE_INTENTS) revert TooManyActiveIntents();
+        
+        if (!USDC.transferFrom(msg.sender, address(this), inputAmount)) revert TransferFailed();
+        
+        uint256 nonce = nonces[msg.sender]++;
+        bytes32 intentId = keccak256(abi.encode(
+            block.chainid,
+            msg.sender,
+            nonce,
+            inputAmount,
+            outputAmount,
+            destChainId,
+            fillDeadline
+        ));
+        
+        intents[intentId] = Intent({
+            user: msg.sender,
+            inputAmount: inputAmount,
+            outputAmount: outputAmount,
+            destChainId: destChainId,
+            fillDeadline: fillDeadline,
+            filled: false,
+            refunded: false
+        });
+        
+        activeIntents[msg.sender]++;
+        
+        emit IntentSigned(intentId, msg.sender, inputAmount, outputAmount, destChainId, fillDeadline);
+        return intentId;
+    }
+    
+    function executeIntent(bytes32 intentId, address relayer) external {
+        if (msg.sender != EXECUTOR) revert Unauthorized();
+        
+        Intent storage intent = intents[intentId];
+        if (intent.user == address(0)) revert IntentNotFound();
+        if (intent.filled) revert AlreadyFilled();
+        if (intent.refunded) revert AlreadyRefunded();
+        if (block.timestamp > intent.fillDeadline) revert DeadlineExpired();
+        if (relayer == address(0)) revert ZeroAddress();
+        if (relayer == EXECUTOR) revert InvalidRelayer();
+        if (relayer == intent.user) revert InvalidRelayer();
+        if (relayer == TREASURY) revert InvalidRelayer();
+        
+        intent.filled = true;
+        activeIntents[intent.user]--;
+        
+        if (!USDC.transfer(relayer, intent.inputAmount)) revert TransferFailed();
+        
+        emit IntentFilled(intentId, relayer);
+    }
+    
+    function refundIntent(bytes32 intentId) external {
+        Intent storage intent = intents[intentId];
+        if (intent.user == address(0)) revert IntentNotFound();
+        if (msg.sender != intent.user) revert Unauthorized();
+        if (intent.filled) revert AlreadyFilled();
+        if (intent.refunded) revert AlreadyRefunded();
+        if (block.timestamp <= intent.fillDeadline) revert NotExpired();
+        
+        intent.refunded = true;
+        activeIntents[intent.user]--;
+        
+        if (!USDC.transfer(intent.user, intent.inputAmount)) revert TransferFailed();
+        
+        emit IntentRefunded(intentId, intent.user);
+    }
+    
+    function getIntent(bytes32 intentId) external view returns (Intent memory) {
+        return intents[intentId];
+    }
+}

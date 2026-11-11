@@ -1,0 +1,27 @@
+# Secrets (CRITICAL — never commit)
+.env
+.env.local
+.env.*
+*.env
+*.pk
+*.key
+*.pem
+wallet*
+
+# Backups
+*.bak
+*.v72bak
+*.v73_*
+
+# Build artifacts
+out/
+cache/
+broadcast/
+node_modules/
+
+# System
+.DS_Store
+*.log
+
+# Internal
+archive-tests/

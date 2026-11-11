@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GhostV20 — Cross-Chain USDC</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+      color: white;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 24px;
+      padding: 32px;
+      max-width: 480px;
+      width: 100%;
+    }
+    h1 { font-size: 28px; margin-bottom: 8px; }
+    .subtitle { color: #a5b4fc; margin-bottom: 24px; font-size: 14px; }
+    label { display: block; margin-bottom: 8px; font-size: 14px; color: #c7d2fe; margin-top: 16px; }
+    input, select {
+      width: 100%;
+      padding: 16px;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      color: white;
+      font-size: 18px;
+    }
+    input:focus, select:focus { outline: none; border-color: #6366f1; }
+    .info {
+      background: rgba(99,102,241,0.1);
+      border: 1px solid rgba(99,102,241,0.3);
+      border-radius: 12px;
+      padding: 16px;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+    .info-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+    .info-row:last-child { margin-bottom: 0; }
+    .info-label { color: #a5b4fc; }
+    button {
+      width: 100%;
+      padding: 18px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button:hover:not(:disabled) { transform: scale(1.01); }
+    .status {
+      margin-top: 16px;
+      padding: 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      text-align: center;
+    }
+    .ok { background: rgba(34,197,94,0.1); color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+    .err { background: rgba(239,68,68,0.1); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+    .info-status { background: rgba(99,102,241,0.1); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.3); }
+    .hidden { display: none; }
+    .wallet { font-size: 12px; color: #a5b4fc; margin: 8px 0; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>👻 GhostV20</h1>
+    <p class="subtitle">Cross-chain USDC. 0.075% fee. 3-5s fills.</p>
+    
+    <button id="connectBtn">Connect Wallet</button>
+    
+    <div id="app" class="hidden">
+      <p id="wallet" class="wallet"></p>
+      
+      <label>Amount (USDC)</label>
+      <input id="amount" type="number" value="10" min="1" step="1" placeholder="10">
+      
+      <label>Destination Chain</label>
+      <select id="dest">
+        <option value="84532">Base Sepolia (84532)</option>
+        <option value="421614">Arbitrum Sepolia (421614)</option>
+      </select>
+      
+      <div class="info">
+        <div class="info-row"><span class="info-label">You deposit:</span><span id="inputDisplay">-</span></div>
+        <div class="info-row"><span class="info-label">You receive:</span><span id="outputDisplay">-</span></div>
+        <div class="info-row"><span class="info-label">Fee (0.075%):</span><span id="feeDisplay">-</span></div>
+        <div class="info-row"><span class="info-label">Est. time:</span><span>~3-5s</span></div>
+      </div>
+      
+      <button id="signBtn">Sign Intent</button>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+  <script>
+    const POOL = "0x54790765f2e74f467F238CBCAE9F1C2B14783Dc0";
+    const USDC = "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d";
+    const CHAIN_ID = 421614;
+    const TOTAL_FEE_BPS = 75;
+    const FEE_DENOM = 100000;
+    
+    let provider, signer, userAddr, signerReady = false;
+    const $ = (id) => document.getElementById(id);
+    
+    function showStatus(msg, type = "info-status") {
+      $("status").innerHTML = `<div class="status ${type}">${msg}</div>`;
+    }
+    
+    function updateInfo() {
+      const amt = parseFloat($("amount").value) || 0;
+      const input = Math.floor(amt * 1e6);
+      const fee = Math.floor(input * TOTAL_FEE_BPS / FEE_DENOM);
+      const output = input - fee;
+      $("inputDisplay").textContent = amt + " USDC";
+      $("outputDisplay").textContent = (output / 1e6).toFixed(6) + " USDC";
+      $("feeDisplay").textContent = (fee / 1e6).toFixed(6) + " USDC";
+    }
+    
+    $("amount").addEventListener("input", updateInfo);
+    updateInfo();
+    
+    async function connect() {
+      if (!window.ethereum) {
+        showStatus("❌ Install MetaMask", "err");
+        return;
+      }
+      
+      try {
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        
+        const network = await provider.getNetwork();
+        if (network.chainId !== CHAIN_ID) {
+          try {
+            await window.ethereum.request({
+              method: "wallet_switchEthereumChain",
+              params: [{ chainId: "0x" + CHAIN_ID.toString(16) }]
+            });
+          } catch (e) {
+            showStatus("❌ Switch to Arbitrum Sepolia (421614)", "err");
+            return;
+          }
+        }
+        
+        signer = provider.getSigner();
+        userAddr = await signer.getAddress();
+        
+        $("wallet").textContent = `Wallet: ${userAddr}`;
+        $("app").classList.remove("hidden");
+        $("connectBtn").classList.add("hidden");
+        showStatus("✅ Connected", "ok");
+        signerReady = true;
+      } catch (e) {
+        showStatus(`❌ ${e.message}`, "err");
+      }
+    }
+    
+    async function sign() {
+      if (!signerReady) return;
+      
+      try {
+        const amt = parseFloat($("amount").value);
+        if (!amt || amt < 1) {
+          showStatus("❌ Minimum 1 USDC", "err");
+          return;
+        }
+        
+        const input = ethers.BigNumber.from(Math.floor(amt * 1e6).toString());
+        const fee = input.mul(TOTAL_FEE_BPS).div(FEE_DENOM);
+        const output = input.sub(fee);
+        const dest = $("dest").value;
+        const deadline = Math.floor(Date.now() / 1000) + 600;
+        
+        const usdc = new ethers.Contract(USDC, [
+          "function allowance(address, address) view returns (uint256)",
+          "function approve(address, uint256) returns (bool)"
+        ], signer);
+        
+        const pool = new ethers.Contract(POOL, [
+          "function signIntent(uint256, uint256, uint256, uint32) returns (bytes32)"
+        ], signer);
+        
+        showStatus("⏳ Checking allowance...", "info-status");
+        const allowance = await usdc.allowance(userAddr, POOL);
+        
+        if (allowance.lt(input)) {
+          showStatus("📝 Approving USDC...", "info-status");
+          const tx = await usdc.approve(POOL, ethers.constants.MaxUint256);
+          await tx.wait();
+        }
+        
+        showStatus("⏳ Signing intent...", "info-status");
+        const tx = await pool.signIntent(input, output, dest, deadline);
+        showStatus(`📤 TX: ${tx.hash.slice(0,10)}...`, "info-status");
+        const receipt = await tx.wait();
+        
+        showStatus(`✅ Intent signed! Block ${receipt.blockNumber}. Waiting for relayer...`, "ok");
+      } catch (e) {
+        showStatus(`❌ ${e.message || e}`, "err");
+      }
+    }
+    
+    $("connectBtn").addEventListener("click", connect);
+    $("signBtn").addEventListener("click", sign);
+  </script>
+</body>
+</html>

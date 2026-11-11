@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "./interfaces/IERC20.sol";
+
+interface IGhostPool {
+    struct Intent {
+        address user;
+        uint256 inputAmount;
+        uint256 outputAmount;
+        uint256 destChainId;
+        uint32 fillDeadline;
+        bool filled;
+        bool refunded;
+    }
+    function getIntent(bytes32) external view returns (Intent memory);
+    function executeIntent(bytes32, address) external;
+}
+
+/// @title GhostExecutor v4
+/// @notice Permissionless fill. Any relayer can execute.
+contract GhostExecutor {
+    IERC20 public immutable USDC;
+    IGhostPool public immutable POOL;
+    address public immutable TREASURY;
+    
+    uint256 public constant FEE_DENOMINATOR = 100_000;
+    uint256 public constant TOTAL_FEE = 50;
+    uint256 public constant TREASURY_FEE = 10;
+    
+    uint256 public totalFills;
+    uint256 public totalVolume;
+    uint256 public totalFees;
+    
+    event FillExecuted(
+        bytes32 indexed intentId,
+        address indexed relayer,
+        address indexed user,
+        uint256 inputAmount,
+        uint256 outputAmount,
+        uint256 treasuryFee
+    );
+    
+    error ZeroAddress();
+    error IntentNotFound();
+    error AlreadyFilled();
+    error AlreadyRefunded();
+    error DeadlineExpired();
+    error InvalidFee();
+    error TransferFailed();
+    error InvalidSender();
+    
+    constructor(address _usdc, address _pool, address _treasury) {
+        if (_usdc == address(0) || _pool == address(0) || _treasury == address(0)) revert ZeroAddress();
+        USDC = IERC20(_usdc);
+        POOL = IGhostPool(_pool);
+        TREASURY = _treasury;
+    }
+    
+    function executeFill(bytes32 intentId) external {
+        IGhostPool.Intent memory intent = POOL.getIntent(intentId);
+        if (intent.user == address(0)) revert IntentNotFound();
+        if (intent.filled) revert AlreadyFilled();
+        if (intent.refunded) revert AlreadyRefunded();
+        if (block.timestamp > intent.fillDeadline) revert DeadlineExpired();
+        if (msg.sender == intent.user) revert InvalidSender();
+        
+        uint256 feeAmount = intent.inputAmount - intent.outputAmount;
+        uint256 expectedFee = (intent.inputAmount * TOTAL_FEE) / FEE_DENOMINATOR;
+        if (feeAmount != expectedFee) revert InvalidFee();
+        
+        uint256 treasuryFee = (intent.inputAmount * TREASURY_FEE) / FEE_DENOMINATOR;
+        
+        if (!USDC.transferFrom(msg.sender, intent.user, intent.outputAmount)) revert TransferFailed();
+        if (!USDC.transferFrom(msg.sender, TREASURY, treasuryFee)) revert TransferFailed();
+        
+        POOL.executeIntent(intentId, msg.sender);
+        
+        totalFills++;
+        totalVolume += intent.inputAmount;
+        totalFees += feeAmount;
+        
+        emit FillExecuted(
+            intentId,
+            msg.sender,
+            intent.user,
+            intent.inputAmount,
+            intent.outputAmount,
+            treasuryFee
+        );
+    }
+    
+    function getStats() external view returns (uint256, uint256, uint256) {
+        return (totalFills, totalVolume, totalFees);
+    }
+}
