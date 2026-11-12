@@ -65,3 +65,22 @@ MIT
 ## Medium
 
 - **Article:** [I Spent 3 Weeks Building a USDC Bridge](https://siratbridge.medium.com/i-spent-3-weeks-building-a-usdc-bridge-then-i-found-a-critical-bug-de3087a17b3d)
+
+## Proof, not promises.
+
+SiratBridge is a trustless USDC bridge. Here's the evidence:
+
+- **Code:** 329 LOC, 25/25 tests passing
+- **On-chain:** 42 successful fills on Sepolia (41 Arb + 1 Base)
+- **Security:** v6 attack failed, v7.2 proves immunity
+- **Immutable:** No admin, no upgrade, no pause (verified in bytecode)
+
+Read it yourself:
+- [01-why-siratbridge.md](./docs/proof/01-why-siratbridge.md)
+- [02-technical-proof.md](./docs/proof/02-technical-proof.md)
+- [03-on-chain-evidence.md](./docs/proof/03-on-chain-evidence.md)
+- [04-security-model.md](./docs/proof/04-security-model.md)
+- [05-relayer-economics.md](./docs/proof/05-relayer-economics.md)
+- [06-faq.md](./docs/proof/06-faq.md)
+
+**No promises. Just code.**
