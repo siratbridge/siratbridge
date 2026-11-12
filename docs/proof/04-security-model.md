@@ -65,9 +65,9 @@ The USDC stays in the Pool. It only moves when:
 
 ### Protocol protection
 
-- **No admin.** No one can change the fee, the treasury, or the rules.
-- **No upgrade.** The code is immutable.
-- **No pause.** The protocol cannot be stopped.
+- **No admin.** No one can change the fee, the treasury, or the rules. Verified in bytecode (no owner, no transferOwnership).
+- **No upgrade.** The code is immutable. Verified in bytecode (no proxy, no upgradeTo).
+- **No pause.** The protocol cannot be stopped. Verified in bytecode (no pause, no unpause).
 
 ### Attack resistance
 
