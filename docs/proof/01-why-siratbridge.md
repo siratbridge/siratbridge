@@ -13,7 +13,7 @@ Cross-chain USDC is:
 ## The Solution
 
 SiratBridge is different:
-- **4.20s median** end-to-end (measured on Sepolia, n=27)
+- **4.20s median** end-to-end on Sepolia (n=27). Mainnet may differ.
 - **0.05% fee** (lowest in class among fee-charging bridges)
 - **Trustless** (user signs only after receiving USDC)
 - **329 lines of Solidity** (auditable in hours, not weeks)
@@ -32,7 +32,7 @@ SiratBridge is different:
 ## Current Status
 
 - **Live on Sepolia** (Arbitrum + Base)
-- **42 successful fills** (verified on-chain)
+- **42 successful fills** (41 Arb + 1 Base, verified on-chain)
 - **25/25 tests** passing
 - **CI passing** on every push
 
